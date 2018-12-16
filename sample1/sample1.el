@@ -36,12 +36,8 @@
   :group 'sample1
   :type 'string)
 
-(defvar sample1-tty-colors
-  ["blue" "red" "green" "yellow"])
-
-(defvar sample1-x-colors
-  [[0 0 1] [1 0 0] [0 1 0] [1 1 0]])
-
+(defconst sample1-player 0)
+(defconst sample1-block 1)
 (defconst sample1-blank 7)
 (defconst sample1-border 8)
 (defconst sample1-space 9)
@@ -50,12 +46,16 @@
 (defconst sample1-height 20)
 
 ;;; variable
+(defvar sample1-player-pos nil)
+(make-variable-buffer-local 'sample1-player-pos)
 (defvar sample1-positions nil)
 (make-variable-buffer-local 'sample1-positions)
 (defvar sample1-tick 0.5)
 (make-variable-buffer-local 'sample1-tick)
 (defvar sample1-total-cell 0)
 (make-variable-buffer-local 'sample1-total-cell)
+(defvar sample1-player-velocity 0)
+(make-variable-buffer-local 'sample1-player-velocity)
 
 ;;; keymaps
 (defvar sample1-null-map
@@ -64,17 +64,39 @@
     (define-key map " " 'sample1-gen-cell)
     (define-key map [up] 'sample1-speed-down)
     (define-key map [down] 'sample1-speed-up)
+    (define-key map [right] 'sample1-player-right)
+    (define-key map [left] 'sample1-player-left)
+    (define-key map "f" 'sample1-player-left)
+    (define-key map "j" 'sample1-player-right)
     map))
 
 ;;; display options
 (defvar sample1-blank-options
   '(((glyph colorize)
      (t ?\040))
-    ((color-x colorx)
-     (monox grid-x)
+    ((color-x color-x)
+     (mono-x grid-x)
      (color-tty color-tty))
     (((glyph color-x) [0 0 0])
      (color-tty "black"))))
+
+(defvar sample1-player-options
+  '(((glyph colorize)
+     (t ?\040))
+    ((color-x color-x)
+     (mono-x grid-x)
+     (color-tty color-tty))
+    (((glyph color-x) [1 0 0])
+     (color-tty "red"))))
+
+(defvar sample1-block-options
+  '(((glyph colorize)
+     (t ?\040))
+    ((color-x color-x)
+     (mono-x grid-x)
+     (color-tty color-tty))
+    (((glyph color-x) [0 0 1])
+     (color-tty "blue"))))
 
 (defvar sample1-cell-options
   '(((glyph colorize)
@@ -109,12 +131,10 @@
       (aset options c
             (cond ((= c sample1-blank)
                    sample1-blank-options)
-                  ((and (>= c 0) (<= c 3))
-                   (append
-                    sample1-cell-options
-                    `((((glyph color-x) ,(aref sample1-x-colors c))
-                       (color-tty ,(aref sample1-tty-colors c))
-                       (t nil)))))
+                  ((= c sample1-player)
+                   sample1-player-options)
+                  ((= c sample1-block)
+                   sample1-block-options)
                   ((= c sample1-border)
                    sample1-border-options)
                   ((= c sample1-space)
@@ -144,8 +164,9 @@
   (sample1-init-buffer)
   (setq sample1-positions nil
         sample1-total-cell 0
-        sample1-tick 0.5)
-  )
+        sample1-tick 0.5
+        sample1-player-pos (vector (/ sample1-width 2) (- sample1-height 1))
+        ))
 
 (defun sample1-init-buffer ()
   "."
@@ -160,6 +181,18 @@
   (if (eq (current-buffer) sample1-buffer)
       (let ((next-positions))
         (sample1-draw-info)
+        (gamegrid-set-cell (aref sample1-player-pos 0) (aref sample1-player-pos 1) sample1-space)
+        (unless (= sample1-player-velocity 0)
+          (let* ((x (aref sample1-player-pos 0))
+                 (y (aref sample1-player-pos 1))
+                 (new-x (+ x sample1-player-velocity)))
+            (if (< new-x 0)
+                (setq new-x 0))
+            (if (>= new-x sample1-width)
+                (setq new-x (- sample1-width 1))
+              (setq sample1-player-pos (vector new-x y))
+              (setq sample1-player-velocity 0))))
+        (gamegrid-set-cell (aref sample1-player-pos 0) (aref sample1-player-pos 1) sample1-player)
         (dolist (pos sample1-positions)
           (let ((x (aref pos 0))
                 (y (aref pos 1))
@@ -167,16 +200,25 @@
             (gamegrid-set-cell x y sample1-space)
             (setq y (+ 1 y))
             (unless (>= y sample1-height)
+              (if (= (gamegrid-get-cell x y) sample1-player)
+                  (sample1-stop-game))
               (gamegrid-set-cell x y c)
               (setq next-positions (cons (vector x y c) next-positions)))))
-        (setq sample1-positions next-positions))))
+        (setq sample1-positions next-positions)
+        (sample1-gen-cell))))
+
+(defun sample1-stop-game ()
+  "."
+  (interactive)
+  (gamegrid-kill-timer)
+  (gamegrid-add-score "sample1-scores" sample1-total-cell))
 
 (defun sample1-gen-cell ()
   "."
   (interactive)
   (let ((x (random sample1-width))
         (y 0)
-        (c (random 4)))
+        (c sample1-block))
     (gamegrid-set-cell x y c)
     (setq sample1-positions (cons (vector x y c) sample1-positions))
     (setq sample1-total-cell (1+ sample1-total-cell)))
@@ -195,6 +237,16 @@
   (interactive)
   (setq sample1-tick (+ sample1-tick 0.05))
   (gamegrid-set-timer sample1-tick))
+
+(defun sample1-player-left ()
+  "."
+  (interactive)
+  (setq sample1-player-velocity -1))
+
+(defun sample1-player-right ()
+  "."
+  (interactive)
+  (setq sample1-player-velocity 1))
 
 (put 'sample1-mode 'mode-class 'special)
 (define-derived-mode sample1-mode nil "Sample1"
